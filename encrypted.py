@@ -8,13 +8,16 @@ import queue
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import os
+import struct
 import base64
 from stem.control import Controller
 import stem.process
 import socks
 from cryptography.hazmat.primitives import serialization
 keys = []
-
 def encryption():
     global keys
     temp = input("Do you have an asymmetric key pair? [y/N]: ").strip().lower()
@@ -134,11 +137,22 @@ def _recv_loop(sock, peer_name):
                 print(f"\n[-] {peer_name} disconnected")
                 break
             try:
-                decrypted_message=private_key.decrypt(data,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
-                decrypted_message = decrypted_message.decode(errors="replace")
+                temp=data
+                encoded_part=temp.split(b";")
+                encrypted_key=encoded_part[0]
+                nonce=encoded_part[1]
+                text=encoded_part[2]
+                encrypted_key=base64.b64decode(encrypted_key)
+                nonce=base64.b64decode(nonce)
+                text=base64.b64decode(text)
+                decrypted_key=private_key.decrypt(encrypted_key,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
+                aes=AESGCM(decrypted_key)
+                plain_text=aes.decrypt(nonce, text, None)
+                original=plain_text.decode("utf-8")
+
             except Exception:
                 text = "<binary data>"
-            print(f"\n[{peer_name}] {decrypted_message}")
+            print(f"\n[{peer_name}] {original}")
     except Exception as e:
         print(f"\n[!] Error on recv from {peer_name}: {e}")
     finally:
@@ -210,11 +224,16 @@ def user_input_loop():
                 print("[!] No connected peers to send to. Use /connect <peer.onion>")
                 continue
             payload = (line + "\n").encode("utf-8")
-            encrypted=public_key.encrypt(payload,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
-            dead = []
+            aes_key=AESGCM.generate_key(bit_length=256)
+            aes=AESGCM(aes_key)
+            nonce=os.urandom(12)
+            text=aes.encrypt(nonce,payload,None)
+            encrypted=public_key.encrypt(aes_key,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
+            test = (base64.b64encode(encrypted) + b";" + base64.b64encode(nonce) + b";" +      base64.b64encode(text))
+            dead=[]
             for s, name in list(connections):
                 try:
-                    s.sendall(encrypted)
+                    s.sendall(test)
                 except Exception as e:
                     print(f"[!] Failed to send to {name}: {e}")
                     dead.append(s)
