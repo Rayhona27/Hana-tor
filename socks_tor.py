@@ -5,6 +5,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import os
+import struct
+import base64
 keys = []
 
 def encryption():
@@ -68,9 +73,19 @@ def receiver(sock):
             if not data:
                 print("\n[Disconnected from peer]")
                 break
-            decrypted_message=private_key.decrypt(data,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
-            decrypted_message = decrypted_message.decode(errors="replace")
-            print(decrypted_message)
+            temp=data
+            encoded_part=temp.split(b";")
+            encrypted_key=encoded_part[0]
+            nonce=encoded_part[1]
+            text=encoded_part[2]
+            encrypted_key=base64.b64decode(encrypted_key)
+            nonce=base64.b64decode(nonce)
+            text=base64.b64decode(text)
+            decrypted_key=private_key.decrypt(encrypted_key,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
+            aes=AESGCM(decrypted_key)
+            plain_text=aes.decrypt(nonce, text, None)
+            original=plain_text.decode("utf-8")
+            print(original)
         except Exception as e:
             print("\n[Receiver error]:", e)
             break
@@ -80,10 +95,15 @@ threading.Thread(target=receiver, args=(s,), daemon=True).start()
 while True:
     public_key=keys[1]
     try:
-        msg = input("> ")
-        payload = (msg + "\n").encode("utf-8")
-        encrypted=public_key.encrypt(payload,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
-        s.sendall(encrypted)
+        line = input("> ")
+        payload = (line + "\n").encode("utf-8")
+        aes_key=AESGCM.generate_key(bit_length=256)
+        aes=AESGCM(aes_key)
+        nonce=os.urandom(12)
+        text=aes.encrypt(nonce,payload,None)
+        encrypted=public_key.encrypt(aes_key,padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA512()),algorithm=hashes.SHA512(),label=None))
+        test = (base64.b64encode(encrypted) + b";" + base64.b64encode(nonce) + b";" +      base64.b64encode(text))
+        s.sendall(test)
     except KeyboardInterrupt:
         print("\n[*] Exiting...")
         s.close()
