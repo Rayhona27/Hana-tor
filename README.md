@@ -1,7 +1,7 @@
 # Platform and Usage
 
 Its a CLI only Messaging service that works over tor to ensure utmost level of anonymity.<br>
-*Note:-It has only been tested on linux, as its just second alpha, but it can be used on windows pretty easily, by just running main.py in your venv, but with future versions it might not.*<br>
+*Note:-It has only been tested on linux, as its just third alpha, but it can be used on windows pretty easily, by just running main.py in your venv, but with future versions it might not.*<br>
 
 ---
 
